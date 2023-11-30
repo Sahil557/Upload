@@ -1,9 +1,7 @@
 import { useState } from "react";
 import * as XLSX from 'xlsx';
-import Papa from 'papaparse';
 
 export const App = () => {
-
   const [fileData, setFileData] = useState(null);
   const [typeError, setTypeError] = useState(null);
   const [excelData, setExcelData] = useState(null);
@@ -17,7 +15,12 @@ export const App = () => {
         setTypeError(null);
 
         let reader = new FileReader();
-        reader.readAsArrayBuffer(selectedFile);
+
+        if (selectedFile.type === 'text/csv') {
+          reader.readAsText(selectedFile);
+        } else {
+          reader.readAsArrayBuffer(selectedFile);
+        }
 
         reader.onload = (e) => {
           setFileData({
@@ -38,24 +41,33 @@ export const App = () => {
     e.preventDefault();
 
     if (fileData !== null) {
-      if (fileData.type === 'text/csv') {
-        const text = new TextDecoder().decode(fileData.data);
+      const workbook = XLSX.read(fileData.data, { type: 'buffer' });
+      const worksheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[worksheetName];
+      const data = XLSX.utils.sheet_to_json(worksheet);
 
-        Papa.parse(text, {
-          complete: (result) => {
-            setExcelData(result.data.slice(0, 10));
-          },
-          header: true,
-        });
+      if (data.length > 0 && 'tenant_stack' in data[0] && 'data_source_system' in data[0] && 'layer_name' in data[0]) {
+        const validTenantStackValues = ['eu_s3', 'eu_sf', 'us_s3', 'us_sf', 'cn_s3', 'cn_rs'];
+        const validDataSourceValues = ['aa', 'ab', 'ac', 'ad', 'ae', 'af'];
+        const validLayerNameValues = ['ab'];
+
+        const isValidFile = data.every((row) =>
+          validTenantStackValues.includes(row['tenant_stack']) &&
+          validDataSourceValues.includes(row['data_source_system']) &&
+          validLayerNameValues.includes(row['layer_name'])
+        );
+
+        if (isValidFile) {
+          setExcelData(data.slice(0, 10));
+          setTypeError(null);
+        } else {
+          setTypeError('File upload failed. Some values in the tenant_stack or data_source_system columns do not match the valid values.');
+        }
       } else {
-        const workbook = XLSX.read(fileData.data, { type: 'buffer' });
-        const worksheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[worksheetName];
-        const data = XLSX.utils.sheet_to_json(worksheet);
-        setExcelData(data.slice(0, 10));
+        setTypeError('The tenant_stack or data_source_system column is missing in the uploaded file. Please upload a valid file.');
       }
     }
-  }
+  };
 
   return (
     <div className="wrapper">
